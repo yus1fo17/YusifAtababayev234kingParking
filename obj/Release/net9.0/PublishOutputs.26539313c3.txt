@@ -1,0 +1,11 @@
+/Users/yusifatababayev/Desktop/paking/publish/ParkingApi
+/Users/yusifatababayev/Desktop/paking/publish/appsettings.Development.json
+/Users/yusifatababayev/Desktop/paking/publish/appsettings.json
+/Users/yusifatababayev/Desktop/paking/publish/ParkingApi.dll
+/Users/yusifatababayev/Desktop/paking/publish/ParkingApi.deps.json
+/Users/yusifatababayev/Desktop/paking/publish/ParkingApi.runtimeconfig.json
+/Users/yusifatababayev/Desktop/paking/publish/ParkingApi.pdb
+/Users/yusifatababayev/Desktop/paking/publish/Microsoft.OpenApi.dll
+/Users/yusifatababayev/Desktop/paking/publish/Swashbuckle.AspNetCore.Swagger.dll
+/Users/yusifatababayev/Desktop/paking/publish/Swashbuckle.AspNetCore.SwaggerGen.dll
+/Users/yusifatababayev/Desktop/paking/publish/Swashbuckle.AspNetCore.SwaggerUI.dll

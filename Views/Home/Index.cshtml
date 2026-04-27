@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ParkFinder</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ol3/3.20.1/ol.css">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg0: #0f172a; --bg1: #1e293b; --bg2: #334155;
+            --acc: #3b82f6; --green: #22c55e; --red: #ef4444;
+            --txt: #f1f5f9; --muted: #94a3b8;
+        }
+        html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg0); color: var(--txt); overflow: hidden; }
+
+        #app { display: flex; height: 100vh; }
+
+        /* ── SIDEBAR ── */
+        #sidebar {
+            width: 320px; min-width: 320px;
+            display: flex; flex-direction: column;
+            background: var(--bg1); border-right: 1px solid var(--bg2); z-index: 20;
+        }
+        #sidebar-header {
+            padding: 16px; background: var(--bg0); border-bottom: 1px solid var(--bg2);
+        }
+        #sidebar-header h1 { font-size: 20px; font-weight: 700; }
+        #sidebar-header h1 span { color: var(--acc); }
+        #sidebar-header p { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+        #controls {
+            padding: 12px; border-bottom: 1px solid var(--bg2);
+            display: flex; gap: 8px; align-items: flex-end;
+        }
+        .ctrl-group { flex: 1; }
+        .ctrl-group label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; display: block; margin-bottom: 4px; }
+        .ctrl-group input {
+            width: 100%; padding: 8px 10px; background: var(--bg0);
+            border: 1px solid var(--bg2); border-radius: 8px;
+            color: var(--txt); font-size: 13px; outline: none;
+        }
+        .ctrl-group input:focus { border-color: var(--acc); }
+        #search-btn {
+            padding: 8px 14px; background: var(--acc); color: #fff;
+            border: none; border-radius: 8px; font-size: 13px;
+            font-weight: 700; cursor: pointer; white-space: nowrap;
+        }
+        #search-btn:hover { background: #2563eb; }
+
+        #status-bar {
+            padding: 7px 14px; font-size: 12px; color: var(--muted);
+            background: var(--bg0); border-bottom: 1px solid var(--bg1);
+            display: flex; align-items: center; gap: 7px; min-height: 32px;
+        }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); flex-shrink: 0; }
+        .dot.spin { animation: blink 1.2s infinite; }
+        .dot.ok  { background: var(--green); }
+        .dot.err { background: var(--red); }
+        @@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+        #parking-list {
+            flex: 1; overflow-y: auto; padding: 10px;
+            scrollbar-width: thin; scrollbar-color: var(--bg2) transparent;
+        }
+        .p-card {
+            background: var(--bg0); border: 1px solid var(--bg2);
+            border-radius: 12px; padding: 12px 13px; margin-bottom: 8px;
+            cursor: pointer; transition: border-color .2s, background .2s;
+        }
+        .p-card:hover  { border-color: var(--acc); background: var(--bg1); }
+        .p-card.active { border-color: var(--acc); background: #1e3a5f; }
+        .p-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .p-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 175px; }
+        .p-dist { font-size: 11px; font-weight: 700; color: var(--acc); background: #1e3a5f; padding: 2px 8px; border-radius: 20px; }
+        .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 9px; }
+        .tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; }
+        .tag-fee  { background:#4c1d1d; color:#f87171; }
+        .tag-free { background:#14532d; color:#4ade80; }
+        .tag-pub  { background:#1e3a5f; color:#60a5fa; }
+        .tag-priv { background:#3b1f6e; color:#c084fc; }
+        .route-btn {
+            width: 100%; padding: 7px; border: none; border-radius: 8px;
+            font-size: 12px; font-weight: 700; cursor: pointer;
+            background: linear-gradient(135deg, var(--acc), #6366f1); color: #fff;
+        }
+        .route-btn:hover { opacity: .85; }
+        .route-btn.on { background: linear-gradient(135deg, var(--red), #f97316); }
+        .empty { text-align: center; padding: 40px 20px; color: var(--bg2); font-size: 14px; }
+
+        /* ── MAP ── */
+        #map-wrap { flex: 1; position: relative; min-width: 0; overflow: hidden; }
+        #map { width: 100%; height: 100%; }
+
+        /* Popup */
+        .ol-popup {
+            position: absolute; background: var(--bg1); border: 1px solid var(--acc);
+            border-radius: 12px; padding: 14px 16px; bottom: 14px; left: -50px;
+            min-width: 210px; box-shadow: 0 8px 24px rgba(0,0,0,.5); color: var(--txt);
+        }
+        .ol-popup::after {
+            content: ''; position: absolute; top: 100%; left: 50px; margin-left: -8px;
+            border: 8px solid transparent; border-top-color: var(--acc);
+        }
+        #popup-closer { position: absolute; top: 6px; right: 10px; color: var(--muted); text-decoration: none; }
+        #popup-closer:hover { color: var(--txt); }
+        .pop-name { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+        .pop-row  { font-size: 12px; color: var(--muted); margin-top: 3px; }
+        .pop-row b { color: var(--txt); }
+        .pop-route { margin-top: 10px; padding: 8px 10px; background: var(--bg0); border-radius: 8px; font-size: 12px; color: #60a5fa; display: flex; gap: 12px; }
+
+        /* Map buttons */
+        #my-loc-btn {
+            position: absolute; bottom: 24px; right: 14px; z-index: 99;
+            width: 42px; height: 42px; border-radius: 50%;
+            background: var(--bg1); border: 1px solid var(--bg2);
+            color: var(--txt); font-size: 20px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,.4);
+        }
+        #my-loc-btn:hover { background: var(--bg2); }
+
+        /* Legend */
+        #legend {
+            position: absolute; bottom: 24px; left: 14px; z-index: 99;
+            background: var(--bg1); border: 1px solid var(--bg2);
+            border-radius: 10px; padding: 10px 14px; font-size: 12px; color: var(--muted);
+        }
+        .leg { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+        .leg:last-child { margin-bottom: 0; }
+        .leg-dot  { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+        .leg-line { width: 18px; height: 4px; border-radius: 2px; background: var(--acc); flex-shrink: 0; }
+
+        /* Mobile */
+        #sheet-handle { display: none; }
+        @@media (max-width: 768px) {
+            #app { flex-direction: column; }
+            #sidebar {
+                position: fixed; bottom: 0; left: 0; right: 0;
+                width: 100%; min-width: unset; height: 56px;
+                border-right: none; border-top: 1px solid var(--bg2);
+                border-radius: 16px 16px 0 0; overflow: hidden; z-index: 50;
+                transition: height .3s ease;
+            }
+            #sidebar.expanded { height: 70vh; }
+            #sheet-handle { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--bg2); margin: 8px auto 4px; cursor: pointer; }
+            #sidebar-header { cursor: pointer; }
+            #map-wrap { height: calc(100vh - 56px); }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+
+    <div id="sidebar">
+        <div id="sheet-handle" onclick="toggleSidebar()"></div>
+        <div id="sidebar-header" onclick="toggleSidebar()">
+            <h1>Park<span>Finder</span></h1>
+            <p>Ətrafınızdakı parkinqləri tapın</p>
+        </div>
+        <div id="controls">
+            <div class="ctrl-group">
+                <label>Diametr (m)</label>
+                <input id="radius-input" type="number" value="2000" min="100" max="50000" step="100">
+            </div>
+            <button id="search-btn">Axtar</button>
+        </div>
+        <div id="status-bar">
+            <div class="dot spin" id="sdot"></div>
+            <span id="stxt">Məkanınız tapılır...</span>
+        </div>
+        <div id="parking-list"><div class="empty">Yüklənir...</div></div>
+    </div>
+
+    <div id="map-wrap">
+        <div id="map"></div>
+
+        <div id="popup" class="ol-popup" style="display:none">
+            <a href="#" id="popup-closer">✕</a>
+            <div id="popup-content"></div>
+        </div>
+
+        <button id="my-loc-btn" title="Məkanıma qayıt">⦿</button>
+
+        <div id="legend">
+            <div class="leg"><div class="leg-dot" style="background:var(--acc);border:2px solid #fff"></div> Mən</div>
+            <div class="leg"><div class="leg-dot" style="background:var(--green)"></div> Parkinq</div>
+            <div class="leg"><div class="leg-line"></div> Marşrut</div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ol3/3.20.1/ol.js"></script>
+<script>
+var map, overlay, markerLayer, routeLayer;
+var userLat, userLon, activeId;
+
+var sdot = document.getElementById('sdot');
+var stxt = document.getElementById('stxt');
+var listEl = document.getElementById('parking-list');
+var popupEl = document.getElementById('popup');
+
+// SVG icons
+function parkIcon() {
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">' +
+        '<path d="M14 0C6.27 0 0 6.27 0 14c0 9.8 14 24 14 24S28 23.8 28 14C28 6.27 21.73 0 14 0z" fill="#22c55e"/>' +
+        '<rect x="8" y="7" width="12" height="15" rx="2" fill="white"/>' +
+        '<text x="14" y="19" text-anchor="middle" font-size="11" font-weight="900" fill="#22c55e" font-family="Arial">P</text>' +
+        '</svg>'
+    );
+}
+function userIcon() {
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' +
+        '<circle cx="12" cy="12" r="10" fill="#3b82f6" stroke="white" stroke-width="3"/>' +
+        '<circle cx="12" cy="12" r="4" fill="white"/>' +
+        '</svg>'
+    );
+}
+
+// Map
+function initMap(lat, lon) {
+    map = new ol.Map({
+        target: 'map',
+        layers: [new ol.layer.Tile({ source: new ol.source.OSM() })],
+        view: new ol.View({ center: ol.proj.fromLonLat([lon, lat]), zoom: 14 })
+    });
+
+    overlay = new ol.Overlay({
+        element: popupEl,
+        autoPan: true,
+        autoPanAnimation: { duration: 250 }
+    });
+    map.addOverlay(overlay);
+
+    document.getElementById('popup-closer').onclick = function(e) {
+        e.preventDefault();
+        popupEl.style.display = 'none';
+        overlay.setPosition(undefined);
+    };
+
+    // OL3: layerFilter 4-cü arqumentdir
+    map.on('singleclick', function(evt) {
+        var mf = map.forEachFeatureAtPixel(evt.pixel, function(f) { return f; }, null,
+            function(l) { return l === markerLayer; }
+        );
+        if (mf && mf.get('type') === 'parking') {
+            var p = {
+                id: mf.get('id'), name: mf.get('name'),
+                latitude: mf.get('lat'), longitude: mf.get('lon'),
+                distanceMeters: mf.get('distance'),
+                fee: mf.get('fee'), access: mf.get('access')
+            };
+            drawRoute(p, document.querySelector('.route-btn[data-id="' + p.id + '"]'));
+            return;
+        }
+        if (routeLayer) {
+            var rf = map.forEachFeatureAtPixel(evt.pixel, function(f) { return f; }, null,
+                function(l) { return l === routeLayer; }
+            );
+            if (rf && activeId != null) {
+                var feat = null;
+                markerLayer.getSource().getFeatures().forEach(function(f) {
+                    if (f.get('id') === activeId) feat = f;
+                });
+                if (feat) {
+                    var p2 = {
+                        id: feat.get('id'), name: feat.get('name'),
+                        latitude: feat.get('lat'), longitude: feat.get('lon'),
+                        distanceMeters: feat.get('distance'),
+                        fee: feat.get('fee'), access: feat.get('access')
+                    };
+                    drawRoute(p2, document.querySelector('.route-btn[data-id="' + p2.id + '"]'));
+                }
+                return;
+            }
+        }
+        popupEl.style.display = 'none';
+        overlay.setPosition(undefined);
+    });
+
+    // OL3: hasFeatureAtPixel yoxdur
+    map.on('pointermove', function(evt) {
+        var hit = !!map.forEachFeatureAtPixel(evt.pixel, function() { return true; }, null,
+            function(l) { return l === markerLayer; }
+        );
+        map.getTargetElement().style.cursor = hit ? 'pointer' : '';
+    });
+}
+
+// Popup
+function showPopup(feature) {
+    var name = feature.get('name');
+    var dist = feature.get('distance');
+    var fee  = feature.get('fee');
+    var acc  = feature.get('access');
+    var ri   = feature.get('routeInfo');
+    var coords = feature.getGeometry().getCoordinates();
+
+    var h = '<div class="pop-name">\uD83C\uDD7F ' + name + '</div>';
+    if (acc) h += '<div class="pop-row">Giriş: <b>' + acc + '</b></div>';
+    if (fee) h += '<div class="pop-row">Ödəniş: <b>' + (fee === 'yes' ? 'Ödənişli' : 'Pulsuz') + '</b></div>';
+    h += '<div class="pop-row">Məsafə: <b>' + dist + ' m</b></div>';
+    if (ri) h += '<div class="pop-route"><span>\uD83D\uDE97 ' + ri.km + ' km</span><span>\u23F1 ' + ri.min + ' dəq</span></div>';
+
+    document.getElementById('popup-content').innerHTML = h;
+    popupEl.style.display = 'block';
+    overlay.setPosition(coords);
+}
+
+
+// Markers
+function renderMarkers(parkings) {
+    if (markerLayer) map.removeLayer(markerLayer);
+    var features = [];
+
+    var uf = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([userLon, userLat])) });
+    uf.set('type', 'user');
+    uf.setStyle(new ol.style.Style({
+        image: new ol.style.Icon({ src: userIcon(), scale: 1, anchor: [0.5, 0.5] })
+    }));
+    features.push(uf);
+
+    parkings.forEach(function(p) {
+        var f = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([p.longitude, p.latitude])) });
+        f.set('type', 'parking'); f.set('id', p.id); f.set('name', p.name || 'Parkinq');
+        f.set('distance', p.distanceMeters); f.set('fee', p.fee); f.set('access', p.access);
+        f.set('lat', p.latitude); f.set('lon', p.longitude);
+        f.setStyle(new ol.style.Style({
+            image: new ol.style.Icon({ src: parkIcon(), scale: 1, anchor: [0.5, 1], anchorXUnits: 'fraction', anchorYUnits: 'fraction' })
+        }));
+        features.push(f);
+    });
+
+    markerLayer = new ol.layer.Vector({ source: new ol.source.Vector({ features: features }) });
+    map.addLayer(markerLayer);
+}
+
+function showOnlyMarker(id) {
+    if (!markerLayer) return;
+    var hidden = new ol.style.Style(null);
+    markerLayer.getSource().getFeatures().forEach(function(f) {
+        if (f.get('type') !== 'parking') return;
+        if (f.get('id') === id) {
+            f.setStyle(new ol.style.Style({
+                image: new ol.style.Icon({ src: parkIcon(), scale: 1, anchor: [0.5, 1], anchorXUnits: 'fraction', anchorYUnits: 'fraction' })
+            }));
+        } else {
+            f.setStyle(hidden);
+        }
+    });
+}
+
+function showAllMarkers() {
+    if (!markerLayer) return;
+    markerLayer.getSource().getFeatures().forEach(function(f) {
+        if (f.get('type') !== 'parking') return;
+        f.setStyle(new ol.style.Style({
+            image: new ol.style.Icon({ src: parkIcon(), scale: 1, anchor: [0.5, 1], anchorXUnits: 'fraction', anchorYUnits: 'fraction' })
+        }));
+    });
+}
+
+// Sidebar list
+function buildList(parkings) {
+    if (!parkings.length) { listEl.innerHTML = '<div class="empty">Parkinq tapılmadı</div>'; return; }
+    listEl.innerHTML = '';
+    parkings.forEach(function(p) {
+        var card = document.createElement('div');
+        card.className = 'p-card';
+        card.dataset.id = p.id;
+
+        var feeTag = p.fee === 'yes' ? '<span class="tag tag-fee">Ödənişli</span>'
+                   : p.fee === 'no'  ? '<span class="tag tag-free">Pulsuz</span>' : '';
+        var accTag = p.access === 'private' ? '<span class="tag tag-priv">Özəl</span>'
+                   : '<span class="tag tag-pub">İctimai</span>';
+
+        card.innerHTML =
+            '<div class="p-top">' +
+              '<div class="p-name">\uD83C\uDD7F ' + (p.name || 'Parkinq') + '</div>' +
+              '<div class="p-dist">' + p.distanceMeters + ' m</div>' +
+            '</div>' +
+            '<div class="tags">' + feeTag + accTag + '</div>' +
+            '<button class="route-btn" data-id="' + p.id + '">\uD83D\uddFA Marşrut göstər</button>';
+
+        card.addEventListener('click', function(e) {
+            if (e.target.classList.contains('route-btn')) return;
+            map.getView().animate({ center: ol.proj.fromLonLat([p.longitude, p.latitude]), zoom: 16, duration: 600 });
+            setActive(p.id);
+        });
+        card.querySelector('.route-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (activeId === p.id && routeLayer) { clearRoute(); return; }
+            drawRoute(p, e.target);
+        });
+        listEl.appendChild(card);
+    });
+}
+
+function setActive(id) {
+    document.querySelectorAll('.p-card').forEach(function(c) { c.classList.remove('active'); });
+    var el = document.querySelector('.p-card[data-id="' + id + '"]');
+    if (el) el.classList.add('active');
+}
+
+// Clear route
+function clearRoute() {
+    if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+    document.querySelectorAll('.route-btn').forEach(function(b) {
+        b.textContent = '\uD83D\uddFA Marşrut göstər';
+        b.classList.remove('on');
+    });
+    popupEl.style.display = 'none';
+    overlay.setPosition(undefined);
+    activeId = null;
+    document.querySelectorAll('.p-card').forEach(function(c) { c.classList.remove('active'); });
+    showAllMarkers();
+}
+
+// Draw route
+async function drawRoute(p, btn) {
+    clearRoute();
+    activeId = p.id;
+    setActive(p.id);
+    if (btn) btn.textContent = '⏳ Yüklənir...';
+
+    var coords = userLon + ',' + userLat + ';' + p.longitude + ',' + p.latitude;
+    var qs = 'overview=full&geometries=geojson';
+    var servers = [
+        'https://router.project-osrm.org/route/v1/driving/' + coords + '?' + qs,
+        'https://routing.openstreetmap.de/routed-car/route/v1/driving/' + coords + '?' + qs
+    ];
+
+    var data = null;
+    for (var i = 0; i < servers.length; i++) {
+        try {
+            var ctrl = new AbortController();
+            var tid = setTimeout(function() { ctrl.abort(); }, 8000);
+            var res = await fetch(servers[i], { signal: ctrl.signal });
+            clearTimeout(tid);
+            var json = await res.json();
+            if (json.code === 'Ok') { data = json; break; }
+        } catch(e) { /* növbəti */ }
+    }
+
+    if (!data) {
+        if (btn) btn.textContent = '\uD83D\uddFA Marşrut göstər';
+        activeId = null;
+        sdot.className = 'dot err';
+        stxt.textContent = 'Marşrut tapılmadı';
+        return;
+    }
+
+    var route  = data.routes[0];
+    var lineCoords = route.geometry.coordinates.map(function(c) { return ol.proj.fromLonLat(c); });
+    var distKm = (route.distance / 1000).toFixed(1);
+    var durMin = Math.ceil(route.duration / 60);
+
+    var outF = new ol.Feature({ geometry: new ol.geom.LineString(lineCoords) });
+    outF.setStyle(new ol.style.Style({ stroke: new ol.style.Stroke({ color: 'rgba(0,0,0,.4)', width: 9, lineCap: 'round' }) }));
+    var lineF = new ol.Feature({ geometry: new ol.geom.LineString(lineCoords) });
+    lineF.setStyle(new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#3b82f6', width: 5, lineCap: 'round', lineJoin: 'round' }) }));
+
+    routeLayer = new ol.layer.Vector({ source: new ol.source.Vector({ features: [outF, lineF] }) });
+    map.addLayer(routeLayer);
+    if (markerLayer) { map.removeLayer(markerLayer); map.addLayer(markerLayer); }
+
+    // Popup yenilə
+    markerLayer.getSource().getFeatures().forEach(function(f) {
+        if (f.get('id') === p.id) {
+            f.set('routeInfo', { km: distKm, min: durMin });
+            showPopup(f);
+        }
+    });
+
+    if (btn) { btn.textContent = '✕ Marşrutu sil'; btn.classList.add('on'); }
+    showOnlyMarker(p.id);
+
+    // Məkana qayıt
+    map.getView().animate({ center: ol.proj.fromLonLat([userLon, userLat]), zoom: 15, duration: 700 });
+}
+
+// Fetch parkings
+async function fetchParkings(diameter) {
+    sdot.className = 'dot spin';
+    stxt.textContent = 'Parkinqlər axtarılır...';
+    listEl.innerHTML = '<div class="empty">Yüklənir...</div>';
+    try {
+        var res = await fetch('/api/parking/nearby', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ latitude: userLat, longitude: userLon, diameterMeters: diameter })
+        });
+        var data = await res.json();
+        renderMarkers(data.parkings);
+        buildList(data.parkings);
+        sdot.className = 'dot ok';
+        stxt.textContent = data.count + ' parkinq tapıldı';
+    } catch(e) {
+        sdot.className = 'dot err';
+        stxt.textContent = 'API xətası';
+        listEl.innerHTML = '<div class="empty">Xəta baş verdi</div>';
+    }
+}
+
+// Start
+function start(lat, lon) {
+    userLat = lat; userLon = lon;
+    initMap(lat, lon);
+    fetchParkings(parseInt(document.getElementById('radius-input').value));
+}
+
+function updateUserMarker(lat, lon) {
+    if (!markerLayer) return;
+    markerLayer.getSource().getFeatures().forEach(function(f) {
+        if (f.get('type') === 'user') {
+            f.getGeometry().setCoordinates(ol.proj.fromLonLat([lon, lat]));
+        }
+    });
+}
+
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            start(pos.coords.latitude, pos.coords.longitude);
+            // İlk yükləmədən sonra mövqeyi izlə
+            navigator.geolocation.watchPosition(
+                function(p) {
+                    var lat = p.coords.latitude;
+                    var lon = p.coords.longitude;
+                    userLat = lat; userLon = lon;
+                    updateUserMarker(lat, lon);
+                },
+                null,
+                { enableHighAccuracy: true, maximumAge: 5000 }
+            );
+        },
+        function() { stxt.textContent = 'İcazə verilmədi — Bakı göstərilir'; start(40.4093, 49.8671); }
+    );
+} else {
+    start(40.4093, 49.8671);
+}
+
+// Controls
+document.getElementById('search-btn').addEventListener('click', function() {
+    if (!userLat) return;
+    clearRoute();
+    fetchParkings(parseInt(document.getElementById('radius-input').value));
+});
+
+document.getElementById('my-loc-btn').addEventListener('click', function() {
+    if (!map || !userLat) return;
+    map.getView().animate({ center: ol.proj.fromLonLat([userLon, userLat]), zoom: 15, duration: 600 });
+});
+
+function toggleSidebar() {
+    if (window.innerWidth > 768) return;
+    document.getElementById('sidebar').classList.toggle('expanded');
+}
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768) document.getElementById('sidebar').classList.remove('expanded');
+});
+</script>
+</body>
+</html>
